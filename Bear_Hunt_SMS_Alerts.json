@@ -89,7 +89,7 @@
     },
     {
       "parameters": {
-        "url": "https://api.weather.gov/points/40.266, -111.802",
+        "url": "https://api.weather.gov/points/XYZ, XYZ",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
