@@ -1,0 +1,439 @@
+{
+  "name": "Bear Hunt SMS Alerts",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 5,14 * 8,9,10 *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "ad4e545e-204b-4133-9920-41e43be7770f",
+      "name": "Schedule Trigger",
+      "retryOnFail": true,
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "const source = $('Get Bear Data Values').first().json;\n\nconst textbelt = $input.first().json;\n\nreturn [{\n\n  json: {\n\n    name: source.name,\n\n    status: source.status,\n\n    quota: source.quota,\n\n    harvest_to_date: source.harvest_to_date,\n\n    remaining: source.remaining,\n\n    timestamp: source.timestamp,\n\n    text_sent: textbelt.success,\n\n    text_id: textbelt.textId,\n\n    quota_remaining_after_send: textbelt.quotaRemaining\n\n  }\n\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2368,
+        0
+      ],
+      "id": "45e5c97b-cfb4-4aae-a9cb-273fcff5fe17",
+      "name": "Reorganize all Data"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "collection": "Bear_Message_Records",
+        "fields": "name,status,quota,harvest_to_date,remaining,timestamp,text_sent,text_id,quota_remaining_after_send",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1.3,
+      "position": [
+        2592,
+        0
+      ],
+      "id": "6eeb9920-e305-420f-958d-8979785cd41a",
+      "name": "Insert documents",
+      "credentials": {
+        "mongoDb": {
+          "id": "OKMG1YnyTsKCqEiZ",
+          "name": "MongoDB account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.weather.gov/gridpoints/SLC/111,141/forecast/hourly",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-hunting-weather (your email)"
+            },
+            {
+              "name": "Accept",
+              "value": "application/geo+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        448,
+        0
+      ],
+      "id": "4e667796-6cfc-47b1-bd0b-1586839269e1",
+      "name": "Weather API Request 2"
+    },
+    {
+      "parameters": {
+        "url": "https://api.weather.gov/points/40.266, -111.802",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "useragent",
+              "value": "n8n-hunting-weather (your email)"
+            },
+            {
+              "name": "Accept",
+              "value": "application/geo+json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        224,
+        0
+      ],
+      "id": "89f2c78c-83e6-4faf-933a-f2b852210125",
+      "name": "NWS Point Lookup"
+    },
+    {
+      "parameters": {
+        "jsCode": "const weather = JSON.parse($json.data);\n\nconst periods = weather.properties.periods || [];\n\n// Take first 24 hourly forecast periods returned by NWS\n\nconst next24Raw = periods.slice(0, 24);\n\n// Use the first forecast hour as the label source\n\nconst firstStartRaw = next24Raw[0]?.startTime;\n\nif (!firstStartRaw) {\n\n  throw new Error(\"No hourly forecast periods found from NWS.\");\n\n}\n\nconst firstStart = new Date(firstStartRaw);\n\n// Format date/time in Mountain Time\n\nconst dateLabel = new Intl.DateTimeFormat(\"en-US\", {\n\n  timeZone: \"America/Denver\",\n\n  month: \"numeric\",\n\n  day: \"numeric\",\n\n}).format(firstStart);\n\nconst timeLabel = new Intl.DateTimeFormat(\"en-US\", {\n\n  timeZone: \"America/Denver\",\n\n  hour: \"numeric\",\n\n  hour12: true,\n\n})\n\n  .format(firstStart)\n\n  .toLowerCase()\n\n  .replace(/\\s/g, \"\");\n\n// Clean forecast rows for Claude\n\nconst next24 = next24Raw.map(p => ({\n\n  time: p.startTime,\n\n  temp: `${p.temperature} ${p.temperatureUnit}`,\n\n  precipChance: p.probabilityOfPrecipitation?.value ?? 0,\n\n  wind: `${p.windSpeed} ${p.windDirection}`,\n\n  forecast: p.shortForecast\n\n}));\n\nreturn [{\n\n  json: {\n\n    weather_location: \"Sample Location\",\n\n    forecast_label: `24hr Fcst - ${dateLabel} ${timeLabel}`,\n\n    debug_first_raw_time: firstStartRaw,\n\n    debug_forecast_label: `24hr Fcst - ${dateLabel} ${timeLabel}`,\n\n    debug_total_periods_from_nws: periods.length,\n\n    weather_periods: next24\n\n  }\n\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ],
+      "id": "3e82ecfe-88aa-476b-95b5-3242fee9f550",
+      "name": "Parse Weather Step"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=I need you to summarize this weather forecast into a daily SMS alert for a backpack hunting trip.\n\nWe are camping at approximately 8,000 feet elevation and will be living out of a backpack, so focus on weather that affects safety, comfort, and hunting conditions.\n\nStart the SMS exactly with this text and do not change the date or time:\n\n{{ $json.forecast_label }}\n\nPlease make any adjustments needed based on the location of this forecast data is for/from specifically and the fact that we will be camping at 8000 feet.\n\nAnalyze the next 24 hours of weather and prioritize:\n\n* Thunderstorms or lightning\n* Rain or snow\n* Strong winds\n* Overnight low temperatures\n* Extreme daytime temperatures\n* Any significant weather changes\n\nKeep the total response between 130 and 150 characthers.\n\nUse actual temperatures and wind speeds.\n\nDo not use greetings, conversational language, explanations, or recommendations. Return only the SMS message. Do not include anything like \"Good Hunting Conditions\" or 'Nice Day'\n\nIf you have extra characters, describe how wind or rain changes throughout the day. Prioritize any information on precipitation above wind if rain looks to be coming.\n\nThis is the one piece of weather information I will have for the 24 hour period, so please make it useful for my backpack hunting purpose. Give me the information chronologically to the best you can.\n\nHere is the forecast data:\n\n{{ JSON.stringify($json.weather_periods) }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "You are a hunting weather assistant. Respond with a concise SMS message under 150 characters."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        896,
+        0
+      ],
+      "id": "2508db6c-7917-4fd9-b787-86cf4d52bff5",
+      "name": "Basic LLM Chain"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "claude-haiku-4-5-20251001",
+          "mode": "list",
+          "cachedResultName": "Claude Haiku 4.5"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.5,
+      "position": [
+        976,
+        224
+      ],
+      "id": "a03afbc1-973e-4eda-afb8-80e97abf90e6",
+      "name": "Anthropic Chat Model",
+      "credentials": {
+        "anthropicApi": {
+          "id": "n6Sm9sv7wdC7RrUT",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://textbelt.com/text",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "phone",
+              "value": "Your Phone Number"
+            },
+            {
+              "name": "message",
+              "value": "={{ $json.message }}"
+            },
+            {
+              "name": "key",
+              "value": "Your TextBelt API Key"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2144,
+        0
+      ],
+      "id": "d9ecd755-ea09-4d32-9de1-9f8fe1805005",
+      "name": "Send Bear Data",
+      "retryOnFail": true,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const row = $input.first().json;\n\nconst now = new Date();\n\nconst date = now.toLocaleDateString('en-US', {\n\n  timeZone: 'America/Denver'\n\n});\n\nconst time = now.toLocaleTimeString('en-US', {\n\n  timeZone: 'America/Denver',\n\n  hour: 'numeric',\n\n  minute: '2-digit'\n\n});\n\nconst message = [\n\n  `Date: ${date}`,\n\n  `Time: ${time} MT`,\n\n  `Unit: ${row.name}`,\n\n  `Status: ${row.status}`,\n\n  `Quota: ${row.quota}`,\n\n  `Harvest to date: ${row.harvest_to_date}`,\n\n  `Remaining: ${row.remaining}`\n\n].join('\\n');\n\nreturn [{\n\n  json: {\n\n    message\n\n  }\n\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        0
+      ],
+      "id": "99c6619f-5cc8-42d7-8bb9-b1a234464e44",
+      "name": "Create Bear Message Data"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://textbelt.com/text",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "phone",
+              "value": "Your Phone Number"
+            },
+            {
+              "name": "message",
+              "value": "={{ $json.text }}"
+            },
+            {
+              "name": "key",
+              "value": "Your TextBelt API Key"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1248,
+        0
+      ],
+      "id": "72421d50-6a6d-48d7-921f-ea2fe6cf1570",
+      "name": "Send Weather Data",
+      "retryOnFail": true,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const html = $input.first().json.data;\n\nconst match = html.match(\n\n  /Wasatch Mtns,\\s*West-Central[\\s\\S]{0,500}?(Open|Closed)[\\s\\S]{0,100}?(\\d+)[\\s\\S]{0,100}?(\\d+)[\\s\\S]{0,100}?(\\d+)/\n\n);\n\nif (!match) {\n\n  throw new Error(\"Could not find Bear Hunt\");\n\n}\n\nreturn [{\n\n  json: {\n\n    name: \"Bear Hunt\",\n\n    status: match[1],\n\n    quota: Number(match[2]),\n\n    harvest_to_date: Number(match[3]),\n\n    remaining: Number(match[4]),\n\n    timestamp: new Date().toISOString()\n\n    \n\n  }\n\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1696,
+        0
+      ],
+      "id": "6a11933d-8ab5-463f-9016-78872ce84a0c",
+      "name": "Get Bear Data Values"
+    },
+    {
+      "parameters": {
+        "url": "https://wildlife.utah.gov/bear/harvest",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1472,
+        0
+      ],
+      "id": "471cdc79-4ec4-4d4c-af3f-a5ccb1465635",
+      "name": "Get DNR Bear Website"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "NWS Point Lookup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reorganize all Data": {
+      "main": [
+        [
+          {
+            "node": "Insert documents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weather API Request 2": {
+      "main": [
+        [
+          {
+            "node": "Parse Weather Step",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "NWS Point Lookup": {
+      "main": [
+        [
+          {
+            "node": "Weather API Request 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Weather Step": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Send Weather Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Bear Data": {
+      "main": [
+        [
+          {
+            "node": "Reorganize all Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Bear Message Data": {
+      "main": [
+        [
+          {
+            "node": "Send Bear Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Weather Data": {
+      "main": [
+        [
+          {
+            "node": "Get DNR Bear Website",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Bear Data Values": {
+      "main": [
+        [
+          {
+            "node": "Create Bear Message Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get DNR Bear Website": {
+      "main": [
+        [
+          {
+            "node": "Get Bear Data Values",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "d5a86ce1-bc46-4f0d-9463-588ec5a9ff4c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "776db0b31d748bf94810d8902a6e9ceca9c3ae0a540ac76b5a22b01b7a5b4d9c"
+  },
+  "nodeGroups": [],
+  "id": "4rbf0g1M6soqxPE1",
+  "tags": []
+}
