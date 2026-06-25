@@ -261,7 +261,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const html = $input.first().json.data;\n\nconst match = html.match(\n\n  /Wasatch Mtns,\\s*West-Central[\\s\\S]{0,500}?(Open|Closed)[\\s\\S]{0,100}?(\\d+)[\\s\\S]{0,100}?(\\d+)[\\s\\S]{0,100}?(\\d+)/\n\n);\n\nif (!match) {\n\n  throw new Error(\"Could not find Bear Hunt\");\n\n}\n\nreturn [{\n\n  json: {\n\n    name: \"Bear Hunt\",\n\n    status: match[1],\n\n    quota: Number(match[2]),\n\n    harvest_to_date: Number(match[3]),\n\n    remaining: Number(match[4]),\n\n    timestamp: new Date().toISOString()\n\n    \n\n  }\n\n}];"
+        "jsCode": "const html = $input.first().json.data;\n\nconst match = html.match(\n\n  /Beat Unit[\\s\\S]{0,500}?(Open|Closed)[\\s\\S]{0,100}?(\\d+)[\\s\\S]{0,100}?(\\d+)[\\s\\S]{0,100}?(\\d+)/\n\n);\n\nif (!match) {\n\n  throw new Error(\"Could not find Bear Hunt\");\n\n}\n\nreturn [{\n\n  json: {\n\n    name: \"Bear Hunt\",\n\n    status: match[1],\n\n    quota: Number(match[2]),\n\n    harvest_to_date: Number(match[3]),\n\n    remaining: Number(match[4]),\n\n    timestamp: new Date().toISOString()\n\n    \n\n  }\n\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
